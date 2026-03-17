@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text Particle Demo</title>
+
+  <!--
+    Three.js ES-module importmap.
+    Must appear BEFORE any <script type="module"> in the document.
+    No build step required — three.module.js is served directly from jsDelivr CDN.
+  -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+
+  <style>
+    /* ── Reset & tokens ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #07090f;
+      --panel:   rgba(6, 11, 22, 0.88);
+      --border:  rgba(90, 130, 200, 0.20);
+      --text:    #d8e4ff;
+      --muted:   #7a90b8;
+      --accent:  #4f8fff;
+      --panel-w: 300px;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout: sidebar + scene ─────────────────────────────────────────── */
+    .demo-layout {
+      display: grid;
+      grid-template-columns: var(--panel-w) 1fr;
+      height: 100vh;
+    }
+
+    /* ── Control panel ───────────────────────────────────────────────────── */
+    .control-panel {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      padding: 1.1rem 1.1rem 1.5rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35em;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.88rem;
+      opacity: 0.85;
+      transition: opacity 0.15s;
+      margin-bottom: 0.5rem;
+    }
+    .back-link:hover { opacity: 1; }
+
+    #preset-name {
+      font-size: 1.0rem;
+      font-weight: 700;
+      line-height: 1.3;
+      margin: 0 0 0.9rem;
+      color: var(--text);
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 0.55rem 0;
+    }
+
+    label {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin: 0.55rem 0 0.2rem;
+    }
+    label span { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 0.5rem 0.65rem;
+      background: rgba(10, 18, 36, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.95rem;
+      letter-spacing: 0.04em;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+    input[type="text"]:focus { border-color: rgba(100, 160, 255, 0.55); }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+      height: 4px;
+    }
+
+    .btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.4rem;
+      margin: 0.5rem 0 0.2rem;
+    }
+    .btn-row.triple { grid-template-columns: 1fr 1fr 1fr; }
+
+    button {
+      padding: 0.52rem 0.4rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(18, 30, 58, 0.90);
+      color: var(--text);
+      font-size: 0.83rem;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+    button:hover {
+      border-color: rgba(140, 190, 255, 0.50);
+      background: rgba(26, 44, 80, 0.95);
+    }
+    button:disabled { opacity: 0.45; cursor: default; }
+
+    #btn-fire {
+      border-color: rgba(80, 140, 255, 0.35);
+      background: rgba(20, 42, 90, 0.90);
+      font-weight: 600;
+    }
+    #btn-fire:hover { background: rgba(30, 58, 120, 0.95); }
+
+    /* Stats block at bottom of panel */
+    .stat-block {
+      margin-top: auto;
+      padding-top: 0.8rem;
+      font-size: 0.80rem;
+      color: var(--muted);
+      line-height: 1.9;
+      border-top: 1px solid var(--border);
+    }
+    .stat-block strong { color: var(--text); }
+
+    /* "Click to explode" hint */
+    .hint {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-align: center;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      margin-top: 0.4rem;
+    }
+
+    /* ── Scene area ───────────────────────────────────────────────────────── */
+    .scene-wrap {
+      position: relative;
+      overflow: hidden;
+    }
+    #scene-mount {
+      width: 100%;
+      height: 100%;
+    }
+    #scene-mount canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* ── Responsive: stack on narrow screens ─────────────────────────────── */
+    @media (max-width: 740px) {
+      .demo-layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+        height: auto;
+        overflow: auto;
+      }
+      .control-panel {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        overflow: visible;
+      }
+      html, body { overflow: auto; }
+      #scene-mount { height: 60vw; min-height: 280px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="demo-layout">
+
+  <!-- ── Left: controls ──────────────────────────────────────────────────── -->
+  <aside class="control-panel" aria-label="Controls">
+
+    <a class="back-link" href="index.html">
+      ← Gallery
+    </a>
+
+    <h1 id="preset-name">Loading…</h1>
+
+    <label for="phrase-input">Text (press Enter to fire)</label>
+    <input id="phrase-input" type="text" maxlength="24" autocomplete="off" spellcheck="false" />
+
+    <div class="btn-row">
+      <button id="btn-fire"    title="Rebuild text and start forming">Fire</button>
+      <button id="btn-explode" title="Trigger explosion immediately">Explode</button>
+    </div>
+
+    <label for="font-select">Font <span id="font-name-label">—</span></label>
+    <div style="display:flex;gap:0.4rem;align-items:center;">
+      <select id="font-select" title="Choose a display font" style="flex:1;padding:0.5rem 0.5rem;background:rgba(10,18,36,0.9);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.85rem;outline:none;cursor:pointer;"></select>
+      <button id="btn-reroll" title="Pick a random font" style="flex-shrink:0;padding:0.52rem 0.65rem;">↺</button>
+    </div>
+
+    <div class="btn-row">
+      <button id="btn-random" title="Fill with a random demo word">Random word</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <label for="speed-input">Speed <span id="speed-value">1.00</span></label>
+    <input id="speed-input" type="range" min="0.3" max="2.5" step="0.05" value="1.0" />
+
+    <label for="intensity-input">Intensity <span id="intensity-value">1.00</span></label>
+    <input id="intensity-input" type="range" min="0.3" max="2.5" step="0.05" value="1.0" />
+
+    <label for="count-input">Particles <span id="count-value">2500</span></label>
+    <input id="count-input" type="range" min="300" max="6000" step="100" value="2500" />
+
+    <p class="hint" id="hint">↑ click the canvas to explode ↑</p>
+
+    <div class="stat-block">
+      <div>Preset: <strong id="preset-name-stat">—</strong></div>
+      <div>Font: <strong id="font-name">—</strong></div>
+      <div>State: <strong id="state-name">loading</strong></div>
+    </div>
+
+  </aside>
+
+  <!-- ── Right: Three.js canvas ──────────────────────────────────────────── -->
+  <section class="scene-wrap">
+    <div id="scene-mount"></div>
+  </section>
+
+</div>
+
+<script type="module" src="js/demo.js"></script>
+</body>
+</html>
