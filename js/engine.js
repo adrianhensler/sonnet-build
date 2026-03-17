@@ -203,6 +203,18 @@ export class TextParticleEngine {
     this._renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.mount.appendChild(this._renderer.domElement);
 
+    // Crisp text overlay (shown before explosion for perfect legibility)
+    this.mount.style.position = this.mount.style.position || 'relative';
+    this._textOverlay = document.createElement('canvas');
+    this._textOverlay.style.position = 'absolute';
+    this._textOverlay.style.inset = '0';
+    this._textOverlay.style.width = '100%';
+    this._textOverlay.style.height = '100%';
+    this._textOverlay.style.pointerEvents = 'none';
+    this._textOverlay.style.opacity = '1';
+    this._textOverlay.style.transition = 'opacity 140ms linear';
+    this.mount.appendChild(this._textOverlay);
+
     // ── BufferGeometry for Points ─────────────────────────────────────────
     const geo = new THREE.BufferGeometry();
 
@@ -249,8 +261,11 @@ export class TextParticleEngine {
       this._camera.aspect = w / h;
       this._camera.updateProjectionMatrix();
       this._renderer.setSize(w, h);
+      this._textOverlay.width = Math.floor(w * Math.min(window.devicePixelRatio, 2));
+      this._textOverlay.height = Math.floor(h * Math.min(window.devicePixelRatio, 2));
     };
     window.addEventListener('resize', this._onResize);
+    this._onResize();
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -354,6 +369,7 @@ export class TextParticleEngine {
     this._mat.dispose();
     this._renderer.dispose();
     this.mount.removeChild(this._renderer.domElement);
+    if (this._textOverlay?.parentNode === this.mount) this.mount.removeChild(this._textOverlay);
   }
 
   // ── State machine ─────────────────────────────────────────────────────────
@@ -380,6 +396,7 @@ export class TextParticleEngine {
     const crispMode = (this._state === S.FORMING || this._state === S.FORMED);
     this._mat.uniforms.uCrisp.value = crispMode ? 1.0 : 0.0;
     this._mat.blending = crispMode ? THREE.NormalBlending : THREE.AdditiveBlending;
+    if (this._textOverlay) this._textOverlay.style.opacity = crispMode ? '1' : '0';
 
     switch (this._state) {
       case S.FORMING:   this._updateForming(dt);   break;
@@ -714,6 +731,9 @@ export class TextParticleEngine {
     ctx.fillStyle = '#ffffff';
     ctx.fillText(text, W / 2, H / 2);
 
+    // Draw a perfectly crisp screen-space overlay for pre-explosion readability
+    this._drawOverlayText(text, font, fontSize);
+
     // Sample every `step` pixels; step chosen to approximate target particle count
     const targetCount = Math.min(this.cfg.particleCount, MAX);
     const imgData     = ctx.getImageData(0, 0, W, H).data;
@@ -749,6 +769,25 @@ export class TextParticleEngine {
     }
 
     return out.subarray(0, written * 3);
+  }
+
+  _drawOverlayText(text, font, fontSize) {
+    if (!this._textOverlay) return;
+    const ctx = this._textOverlay.getContext('2d');
+    const w = this._textOverlay.width;
+    const h = this._textOverlay.height;
+    if (!ctx || !w || !h) return;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 0;
+
+    const scale = h / 300;
+    ctx.font = `${font.weight} ${Math.max(12, Math.round(fontSize * scale))}px ${font.css}`;
+    ctx.fillText(text, w / 2, h / 2);
   }
 
   // ── Geometry construction ─────────────────────────────────────────────────
