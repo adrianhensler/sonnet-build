@@ -61,6 +61,8 @@ const VERT = /* glsl */`
 const FRAG = /* glsl */`
   precision mediump float;
 
+  uniform float uCrisp;
+
   varying vec3  vColor;
   varying float vAlpha;
   varying float vShape;
@@ -117,9 +119,17 @@ const FRAG = /* glsl */`
     float dist = length(uv);
     float core = 1.0 - smoothstep(0.0, 0.16, dist);
     float rim  = 1.0 - smoothstep(0.18, 0.5, dist);
-    float alpha = (shapeMask * 0.8 + rim * 0.35 + core * 0.55) * vAlpha;
 
-    gl_FragColor = vec4(vColor * alpha + core * 0.25, alpha);
+    // crisp mode for readable text before explosion
+    float alphaSoft  = (shapeMask * 0.8 + rim * 0.35 + core * 0.55) * vAlpha;
+    float alphaCrisp = shapeMask * vAlpha;
+    float alpha = mix(alphaSoft, alphaCrisp, uCrisp);
+
+    vec3 softColor  = vColor * alpha + core * 0.25;
+    vec3 crispColor = vColor * alpha;
+    vec3 outColor = mix(softColor, crispColor, uCrisp);
+
+    gl_FragColor = vec4(outColor, alpha);
   }
 `;
 
@@ -218,6 +228,9 @@ export class TextParticleEngine {
     this._mat = new THREE.ShaderMaterial({
       vertexShader:   VERT,
       fragmentShader: FRAG,
+      uniforms: {
+        uCrisp: { value: 1.0 },
+      },
       transparent:    true,
       depthWrite:     false,
       blending:       THREE.AdditiveBlending,
@@ -363,6 +376,11 @@ export class TextParticleEngine {
   _update(dt) {
     this._stateTime += dt;
 
+    // Crisp, readable text while forming/formed; softer glow once exploding.
+    const crispMode = (this._state === S.FORMING || this._state === S.FORMED);
+    this._mat.uniforms.uCrisp.value = crispMode ? 1.0 : 0.0;
+    this._mat.blending = crispMode ? THREE.NormalBlending : THREE.AdditiveBlending;
+
     switch (this._state) {
       case S.FORMING:   this._updateForming(dt);   break;
       case S.FORMED:    this._updateFormed(dt);    break;
@@ -383,7 +401,7 @@ export class TextParticleEngine {
     const lerpSpeed = 3.8 * this.cfg.speed;
     const t         = 1.0 - Math.exp(-lerpSpeed * dt); // frame-rate independent
     const elapsed   = this._clock.getElapsedTime();
-    const turbAmp   = 0.022;
+    const turbAmp   = 0.006;
 
     for (let i = 0; i < this._count; i++) {
       const i3 = i * 3;
@@ -422,14 +440,13 @@ export class TextParticleEngine {
 
   // FORMED — gentle floating; auto-explode after hold duration
   _updateFormed(dt) {
-    const elapsed  = this._clock.getElapsedTime();
-    const floatAmp = 0.030;
-
+    // Keep formed word locked to sampled pixels for max readability
     for (let i = 0; i < this._count; i++) {
       const i3 = i * 3;
-      const ph = this._ph[i];
-      // Sinusoidal vertical bob; X/Z stay at target
-      this._pos[i3+1] = this._tgt[i3+1] + Math.sin(elapsed * 1.2 + ph) * floatAmp;
+      this._pos[i3]   = this._tgt[i3];
+      this._pos[i3+1] = this._tgt[i3+1];
+      this._pos[i3+2] = this._tgt[i3+2];
+      this._al[i]     = 1.0;
     }
 
     // Auto-trigger explosion
